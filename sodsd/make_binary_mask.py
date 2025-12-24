@@ -36,8 +36,8 @@ def create_binary_mask(
 
 if __name__ == "__main__":
     # пример использования
-    output_mask = "/home/ubuntu/sodsd/data/maskPfm"
-    source_path = "/home/ubuntu/sodsd/data/pfm"
+    source_path = "./data/pfm"
+    output_mask = "./data/maskPfm"
 
     path_images = os.listdir(source_path)
     for path in path_images:

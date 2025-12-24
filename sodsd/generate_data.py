@@ -75,6 +75,6 @@ for i in range(10):
     print("NEG:", n)
     print("---")
     image = pipe(prompt=p, negative_prompt=n).images[0]
-    save_path = Path("/home/ubuntu/sodsd/data/raw")
+    save_path = Path("./data/raw")
     image_name = Path(f"imagedopNew_{i}.png")
     image.save(os.path.join(save_path, image_name))

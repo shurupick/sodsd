@@ -1,4 +1,3 @@
-# render_stl_euler_sweep.py
 import argparse
 import os
 
@@ -25,22 +24,22 @@ def main():
     p.add_argument("--stl", required=True, help="Путь к STL-модели")
     p.add_argument(
         "--rx",
-        default="0:50:10",
+        default="-60:0:10",
         help="Диапазон углов вокруг X, формат start:end:step (°)",
     )
     p.add_argument(
         "--ry",
-        default="0:0:1",
+        default="0:0:10",
         help="Диапазон углов вокруг Y, формат start:end:step (°)",
     )
     p.add_argument(
         "--rz",
-        default="0:180:30",
+        default="0:90:10",
         help="Диапазон углов вокруг Z, формат start:end:step (°)",
     )
     p.add_argument(
         "--order",
-        default="ZYX",
+        default="ZXY",
         choices=["XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX"],
         help="Порядок применения углов Эйлера к МОДЕЛИ (по умолчанию ZYX)",
     )
@@ -52,7 +51,7 @@ def main():
     p.add_argument(
         "--fmt", default="png", choices=["png", "jpg", "jpeg"], help="Формат сохранения"
     )
-    p.add_argument("--outdir", default="renders", help="Папка для сохранения")
+    p.add_argument("--outdir", default="./data/pfm", help="Папка для сохранения")
     p.add_argument("--name", default="view", help="Префикс имени файлов")
     p.add_argument("--color", default="#b0c4de", help="Цвет модели")
     p.add_argument(
@@ -173,9 +172,9 @@ def main():
                 # восстановим базовую геометрию на каждой итерации
                 mesh_copy = base.copy(deep=True)
                 # применяем углы к МОДЕЛИ в заданном порядке
-                for ax, angle in zip(
-                    order, [locals()[f"r{ax.lower()}"] for ax in order]
-                ):
+                axis_angles = {"X": rx, "Y": ry, "Z": rz}
+                for ax in order:
+                    angle = axis_angles[ax]
                     if ax == "X":
                         mesh_copy.rotate_x(angle, inplace=True)
                     elif ax == "Y":
@@ -185,6 +184,7 @@ def main():
 
                 # обновляем актёр (меняем ссылку на геометрию)
                 actor.mapper.SetInputData(mesh_copy)  # low-level VTK обновление
+                pl.render()
 
                 # рендер и сохранение
                 out_name = f"{args.name}_rx{rx:.1f}_ry{ry:.1f}_rz{rz:.1f}.{args.fmt}"
