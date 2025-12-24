@@ -165,25 +165,51 @@ def main():
     n_total = len(Rx) * len(Ry) * len(Rz)
     idx = 0
 
+    def _rotation_matrix(axis: str, angle_deg: float):
+        theta = np.deg2rad(angle_deg)
+        c, s = np.cos(theta), np.sin(theta)
+        if axis == "X":
+            return np.array(
+                [
+                    [1, 0, 0, 0],
+                    [0, c, -s, 0],
+                    [0, s, c, 0],
+                    [0, 0, 0, 1],
+                ],
+                dtype=float,
+            )
+        if axis == "Y":
+            return np.array(
+                [
+                    [c, 0, s, 0],
+                    [0, 1, 0, 0],
+                    [-s, 0, c, 0],
+                    [0, 0, 0, 1],
+                ],
+                dtype=float,
+            )
+        return np.array(
+            [
+                [c, -s, 0, 0],
+                [s, c, 0, 0],
+                [0, 0, 1, 0],
+                [0, 0, 0, 1],
+            ],
+            dtype=float,
+        )
+
     for rx in Rx:
         for ry in Ry:
             for rz in Rz:
                 idx += 1
-                # восстановим базовую геометрию на каждой итерации
                 mesh_copy = base.copy(deep=True)
-                # применяем углы к МОДЕЛИ в заданном порядке
                 axis_angles = {"X": rx, "Y": ry, "Z": rz}
+                matrix = np.eye(4, dtype=float)
                 for ax in order:
-                    angle = axis_angles[ax]
-                    if ax == "X":
-                        mesh_copy.rotate_x(angle, inplace=True)
-                    elif ax == "Y":
-                        mesh_copy.rotate_y(angle, inplace=True)
-                    elif ax == "Z":
-                        mesh_copy.rotate_z(angle, inplace=True)
+                    matrix = _rotation_matrix(ax, axis_angles[ax]) @ matrix
 
-                # обновляем актёр (меняем ссылку на геометрию)
-                actor.mapper.SetInputData(mesh_copy)  # low-level VTK обновление
+                mesh_copy.transform(matrix, inplace=True)
+                actor.mapper.SetInputData(mesh_copy)
                 pl.render()
 
                 # рендер и сохранение
