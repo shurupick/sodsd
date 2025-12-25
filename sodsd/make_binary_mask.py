@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 import cv2
 
@@ -27,26 +27,34 @@ def create_binary_mask(
     #   если pixel > thresh → 0 (фон)
     #   иначе → 255 (мина/объект)
     _, mask = cv2.threshold(gray, thresh, 255, cv2.THRESH_BINARY_INV)
-    mask = cv2.bitwise_not(mask)
+    # mask = cv2.bitwise_not(mask)
 
-    # сохраняем маску
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    cv2.imwrite(output_path, mask)
+    # сохраняем маску, гарантируем существование пути
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), mask)
 
 
 if __name__ == "__main__":
     # пример использования
-    source_path = "./data/pfm"
-    output_mask = "./data/maskPfm"
+    source_dir = Path("./data/pfm")
+    output_dir = Path("./data/maskPfm")
 
-    path_images = os.listdir(source_path)
-    for path in path_images:
-        print(path)
-        image_path = os.path.join(source_path, path)
-        output_mask = os.path.join(output_mask, path)
+    if not source_dir.is_dir():
+        raise SystemExit(f"Источник не найден: {source_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    valid_suffixes = {".png", ".jpg", ".jpeg"}
+    for image_path in sorted(source_dir.iterdir()):
+        if not image_path.is_file():
+            continue
+        if image_path.name.startswith(".") or image_path.suffix.lower() not in valid_suffixes:
+            continue
+        output_mask = output_dir / image_path.name
+        print(f"masking {image_path.name}")
 
         create_binary_mask(
-            image_path=image_path,
-            output_path=output_mask,
+            image_path=str(image_path),
+            output_path=str(output_mask),
             thresh=240,  # если фон не идеально белый — можно поиграть 220–250
         )
