@@ -15,6 +15,11 @@ def calculate_optimal_focal_length(image_width, image_height, rotation_angle):
     # Round to nearest 100 for cleaner values
     return int(round(base_focal_length / 100.0) * 100)
 
+def upscale_bilinear(input_img, scale_factor):
+    new_width = int(input_img.shape[1] * scale_factor)
+    new_height = int(input_img.shape[0] * scale_factor)
+    return cv2.resize(input_img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
 def crop(input_img):
     # Find the bounding box of non-white pixels
     gray = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
@@ -72,9 +77,11 @@ def main():
     if img is None:
         print("Error: Could not read the input image.")
         return
+    
+    resized_img = upscale_bilinear(img, 4.0)  # Upscale by a factor of 2 for better quality during rotation
 
     # Original dimensions
-    orig_height, orig_width = img.shape[:2]
+    orig_height, orig_width = resized_img.shape[:2]
 
     # Set rotation angle
     rotation_angle = 45.0  # Y-axis rotation in degrees
@@ -164,7 +171,7 @@ def main():
 
     # Apply transformation with larger output dimensions
     rotated = cv2.warpPerspective(
-        img, final_transform, (output_width, output_height),
+        resized_img, final_transform, (output_width, output_height),
         flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255)
     )
 
