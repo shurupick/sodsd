@@ -1,9 +1,23 @@
 import argparse
+import colorsys
 import os
+import random
 
 import numpy as np
 import pyvista as pv
 from stl import mesh as npstl
+
+PFM_GREEN_PRESETS = {
+    "pfm_green": "#556b2f",
+    "olive_green": "#5f6f34",
+    "dark_olive": "#3f4f25",
+    "moss_green": "#687b3a",
+    "faded_green": "#77855a",
+    "khaki_green": "#7a8051",
+    "yellow_olive": "#8a8a46",
+}
+
+PFM_NATURAL_GREEN_PALETTE = tuple(PFM_GREEN_PRESETS.values())
 
 
 def parse_range(spec: str):
@@ -17,6 +31,69 @@ def parse_range(spec: str):
     # включительно конец, если попадает по сетке
     vals = np.arange(a, b + 1e-9, s)
     return [float(v) for v in vals]
+
+
+def _rgb_to_float(rgb):
+    return tuple(channel / 255.0 for channel in rgb)
+
+
+def _hex_to_rgb_float(value: str):
+    value = value.lstrip("#")
+    if len(value) != 6:
+        raise ValueError("HEX-цвет должен иметь формат #RRGGBB")
+    return _rgb_to_float(
+        (
+            int(value[0:2], 16),
+            int(value[2:4], 16),
+            int(value[4:6], 16),
+        )
+    )
+
+
+def resolve_color(color_spec: str):
+    """
+    Возвращает RGB tuple в диапазоне 0..1.
+
+    Поддерживаются:
+    - #RRGGBB
+    - стандартные имена цветов PyVista/VTK
+    - локальные пресеты зелёных оттенков PFM_GREEN_PRESETS
+    """
+    key = color_spec.strip().lower().replace("-", "_")
+    if key in PFM_GREEN_PRESETS:
+        return _hex_to_rgb_float(PFM_GREEN_PRESETS[key])
+
+    try:
+        return tuple(pv.Color(color_spec).float_rgb)
+    except ValueError as exc:
+        presets = ", ".join(sorted(PFM_GREEN_PRESETS))
+        raise ValueError(
+            f"Неизвестный цвет '{color_spec}'. Используйте #RRGGBB, имя цвета "
+            f"PyVista/VTK или один из пресетов: {presets}"
+        ) from exc
+
+
+def jitter_color(rgb, rng: random.Random, strength: float):
+    """
+    Делает цвет чуть менее синтетическим: небольшой разброс в HSV вокруг базы.
+    strength=0 отключает разброс, 1 даёт максимальный предусмотренный диапазон.
+    """
+    strength = max(0.0, min(1.0, strength))
+    if strength == 0:
+        return rgb
+
+    hue, saturation, value = colorsys.rgb_to_hsv(*rgb)
+    hue = (hue + rng.uniform(-0.035, 0.035) * strength) % 1.0
+    saturation_scale = 1.0 + rng.uniform(-0.2, 0.12) * strength
+    value_scale = 1.0 + rng.uniform(-0.22, 0.15) * strength
+    saturation = min(1.0, max(0.25, saturation * saturation_scale))
+    value = min(0.72, max(0.18, value * value_scale))
+    return colorsys.hsv_to_rgb(hue, saturation, value)
+
+
+def choose_natural_green(rng: random.Random, jitter_strength: float):
+    base_color = rng.choice(PFM_NATURAL_GREEN_PALETTE)
+    return jitter_color(_hex_to_rgb_float(base_color), rng, jitter_strength)
 
 
 def main():
@@ -45,18 +122,41 @@ def main():
     )
     p.add_argument("--w", type=int, default=1200, help="Ширина изображения")
     p.add_argument("--h", type=int, default=900, help="Высота изображения")
-    p.add_argument(
-        "--bg", default="white", help="Цвет фона (например, white/black/#RRGGBB)"
-    )
+    p.add_argument("--bg", default="white", help="Цвет фона (например, white/black/#RRGGBB)")
     p.add_argument(
         "--fmt", default="png", choices=["png", "jpg", "jpeg"], help="Формат сохранения"
     )
     p.add_argument("--outdir", default="./data/pfm", help="Папка для сохранения")
     p.add_argument("--name", default="view", help="Префикс имени файлов")
-    p.add_argument("--color", default="#b0c4de", help="Цвет модели")
     p.add_argument(
-        "--smooth", action="store_true", help="Включить сглаженное освещение (Phong)"
+        "--color",
+        default="pfm_green",
+        help=(
+            "Цвет модели: #RRGGBB, имя цвета PyVista/VTK или пресет "
+            f"({', '.join(sorted(PFM_GREEN_PRESETS))})"
+        ),
     )
+    p.add_argument(
+        "--randomize-color",
+        choices=["off", "once", "per-frame"],
+        default="off",
+        help=(
+            "Рандомизация натурального зелёного оттенка: off — использовать --color, "
+            "once — один оттенок на весь запуск, per-frame — новый оттенок на каждый кадр"
+        ),
+    )
+    p.add_argument(
+        "--color-jitter",
+        type=float,
+        default=0.35,
+        help="Сила естественного разброса HSV для --randomize-color (0..1)",
+    )
+    p.add_argument(
+        "--color-seed",
+        type=int,
+        help="Seed для воспроизводимого выбора оттенков",
+    )
+    p.add_argument("--smooth", action="store_true", help="Включить сглаженное освещение (Phong)")
     p.add_argument("--aa", type=int, default=8, help="MSAA (кол-во выборок, 0=выкл)")
     p.add_argument(
         "--camera",
@@ -92,6 +192,7 @@ def main():
         help="Вектор up камеры при camera=custom",
     )
     args = p.parse_args()
+    rng = random.Random(args.color_seed)
 
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -102,17 +203,13 @@ def main():
     uniq, inv = np.unique(np.round(triangles, 8), axis=0, return_inverse=True)
     faces = inv.reshape(-1, 3)
     # PyVista ожидает формат faces: [3, i, j, k, 3, i, j, k, ...]
-    faces_pv = np.hstack(
-        [np.full((faces.shape[0], 1), 3, dtype=np.int64), faces]
-    ).ravel()
+    faces_pv = np.hstack([np.full((faces.shape[0], 1), 3, dtype=np.int64), faces]).ravel()
 
     mesh = pv.PolyData(uniq, faces_pv)
 
     # Нормализация масштаба (чтобы кадры были сопоставимы)
     # Центрируем и приводим к единичному размеру по диагонали bbox.
-    bounds = np.array(mesh.bounds).reshape(
-        3, 2
-    )  # [[xmin,xmax],[ymin,ymax],[zmin,zmax]]
+    bounds = np.array(mesh.bounds).reshape(3, 2)  # [[xmin,xmax],[ymin,ymax],[zmin,zmax]]
     center = bounds.mean(axis=1)
     extent = bounds[:, 1] - bounds[:, 0]
     diag = float(np.linalg.norm(extent))
@@ -148,10 +245,13 @@ def main():
         if args.cam_roll:
             pl.camera.roll = args.cam_roll
 
+    if args.randomize_color == "off":
+        initial_color = resolve_color(args.color)
+    else:
+        initial_color = choose_natural_green(rng, args.color_jitter)
+
     # Базовая сетка без вращения (чтобы переиспользовать актёр)
-    actor = pl.add_mesh(
-        mesh, color=args.color, smooth_shading=args.smooth, specular=0.2
-    )
+    actor = pl.add_mesh(mesh, color=initial_color, smooth_shading=args.smooth, specular=0.12)
     pl.camera.zoom(0.5)
 
     Rx = parse_range(args.rx)
@@ -202,6 +302,9 @@ def main():
         for ry in Ry:
             for rz in Rz:
                 idx += 1
+                if args.randomize_color == "per-frame":
+                    actor.GetProperty().SetColor(choose_natural_green(rng, args.color_jitter))
+
                 mesh_copy = base.copy(deep=True)
                 axis_angles = {"X": rx, "Y": ry, "Z": rz}
                 matrix = np.eye(4, dtype=float)
